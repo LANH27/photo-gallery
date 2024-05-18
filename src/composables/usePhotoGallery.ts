@@ -1,14 +1,39 @@
-import { ref } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Preferences } from '@capacitor/preferences';
 
 export interface UserPhoto {
   filepath: string;
   webviewPath?: string;
 }
 
+const PHOTO_STORAGE = 'photos';
+
 export const usePhotoGallery = () => {
   const photos = ref<UserPhoto[]>([]);
+
+  const loadSaved = async () => {
+    const photoList = await Preferences.get({ key: PHOTO_STORAGE });
+    const photosInPreferences = photoList.value ? JSON.parse(photoList.value) : [];
+
+    for (const photo of photosInPreferences) {
+      const file = await Filesystem.readFile({
+        path: photo.filepath,
+        directory: Directory.Data,
+      });
+      photo.webviewPath = `data:image/jpeg;base64,${file.data}`;
+    }
+
+    photos.value = photosInPreferences;
+  };
+
+  const cachePhotos = () => {
+    Preferences.set({
+      key: PHOTO_STORAGE,
+      value: JSON.stringify(photos.value),
+    });
+  };
 
   const takePhoto = async () => {
     try {
@@ -58,6 +83,12 @@ export const usePhotoGallery = () => {
       throw error;
     }
   };
+
+  // Observar cambios en la lista de fotos y almacenar en caché las fotos cada vez que cambie
+  watch(photos, cachePhotos, { deep: true });
+
+  // Cargue las fotos guardadas cuando se llame a la función por primera vez
+  onMounted(loadSaved);
 
   return {
     photos,
